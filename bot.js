@@ -170,15 +170,48 @@ function playButton(level) {
   );
 }
 
+// ─── Daily Hole Scraper ────────────────────────────────────────────────────────
+
+let cachedDaily = { hole: null, date: null, fetchedAt: 0 };
+
+async function fetchDailyHole() {
+  // Cache for 30 minutes
+  if (Date.now() - cachedDaily.fetchedAt < 30 * 60 * 1000 && cachedDaily.hole) {
+    return cachedDaily;
+  }
+  try {
+    const res = await fetch(GAME_URL);
+    const html = await res.text();
+
+    // Extract hole number (looks for "No.\n315" pattern in the HTML)
+    const holeMatch = html.match(/No\.\s*(?:<[^>]*>\s*)*(\d+)/i);
+    // Extract date
+    const dateMatch = html.match(
+      /(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})\s*\n?\s*(\d{4})/i
+    );
+
+    cachedDaily.hole = holeMatch ? parseInt(holeMatch[1]) : null;
+    cachedDaily.date = dateMatch ? `${dateMatch[1]} ${dateMatch[2]}, ${dateMatch[3]}` : null;
+    cachedDaily.fetchedAt = Date.now();
+  } catch (err) {
+    console.error("Failed to fetch daily hole:", err.message);
+  }
+  return cachedDaily;
+}
+
 // ─── Command Handlers ──────────────────────────────────────────────────────────
 
 async function handleGolf(interaction) {
   const level = interaction.options.getString("level");
+  const daily = await fetchDailyHole();
+  const todayInfo = daily.hole ? `Today's hole: **No. ${daily.hole}**\n\n` : "";
+
   const embed = new EmbedBuilder()
     .setColor(0x2ecc71)
     .setTitle(`${EMOJI.golf} Kinda Hard Golf`)
     .setDescription(
-      `Think you've got what it takes?\n\n` +
+      `${todayInfo}` +
+        `Think you've got what it takes?\n\n` +
         `${level ? `**Go play Level ${level}** and come back to submit your score!` : "**Click below to play**, then submit your score with `/submit`!"}` +
         `\n\nThe game is... kinda hard. Good luck.`
     )
@@ -188,12 +221,65 @@ async function handleGolf(interaction) {
   await interaction.reply({ embeds: [embed], components: [playButton(level)] });
 }
 
+async function handleToday(interaction) {
+  const daily = await fetchDailyHole();
+  const guildId = interaction.guildId;
+
+  if (!daily.hole) {
+    return interaction.reply({
+      content: "Couldn't fetch today's hole info — try again in a minute!",
+      ephemeral: true,
+    });
+  }
+
+  // Get leaderboard for today's hole
+  const rows = stmts.levelLeaderboard.all({ guildId, level: daily.hole });
+  const lbText =
+    rows.length > 0
+      ? `\n\n**${EMOJI.trophy} Server Scores for No. ${daily.hole}:**\n` +
+        rows
+          .slice(0, 10)
+          .map(
+            (r, i) =>
+              `${medalFor(i)} **${r.username}** — ${r.best_strokes} stroke${r.best_strokes !== 1 ? "s" : ""}`
+          )
+          .join("\n")
+      : `\n\nNo one has submitted a score yet — be the first!\nUse \`/submit strokes:<your score>\``;
+
+  const embed = new EmbedBuilder()
+    .setColor(0xe67e22)
+    .setTitle(`${EMOJI.golf} Today's Hole — No. ${daily.hole}`)
+    .setDescription(
+      `**${daily.date || "Today"}**\n\n` +
+        `Today's daily hole is **No. ${daily.hole}**. Play it and submit your score!` +
+        lbText
+    )
+    .setURL(GAME_URL)
+    .setFooter({
+      text: `Use /submit strokes:<score> to log your score`,
+    });
+
+  await interaction.reply({ embeds: [embed], components: [playButton()] });
+}
+
 async function handleSubmit(interaction) {
-  const level = interaction.options.getInteger("level");
+  let level = interaction.options.getInteger("level");
   const strokes = interaction.options.getInteger("strokes");
   const userId = interaction.user.id;
   const username = interaction.user.displayName || interaction.user.username;
   const guildId = interaction.guildId;
+
+  // Default to today's hole if no level provided
+  if (!level) {
+    const daily = await fetchDailyHole();
+    if (!daily.hole) {
+      return interaction.reply({
+        content: "Couldn't fetch today's hole number. Please specify a level manually: `/submit strokes:8 level:315`",
+        ephemeral: true,
+      });
+    }
+    level = daily.hole;
+  }
 
   // Get previous best
   const prev = stmts.bestScoreForLevel.get({ userId, guildId, level });
@@ -338,9 +424,21 @@ async function handleLeaderboard(interaction) {
 
 async function handleDuel(interaction) {
   const opponent = interaction.options.getUser("opponent");
-  const level = interaction.options.getInteger("level");
+  let level = interaction.options.getInteger("level");
   const guildId = interaction.guildId;
   const challengerId = interaction.user.id;
+
+  // Default to today's hole if no level provided
+  if (!level) {
+    const daily = await fetchDailyHole();
+    if (!daily.hole) {
+      return interaction.reply({
+        content: "Couldn't fetch today's hole number. Please specify a level manually: `/golfduel @player level:315`",
+        ephemeral: true,
+      });
+    }
+    level = daily.hole;
+  }
 
   if (opponent.id === challengerId) {
     return interaction.reply({ content: "You can't duel yourself!", ephemeral: true });
@@ -358,11 +456,11 @@ async function handleDuel(interaction) {
 
   const embed = new EmbedBuilder()
     .setColor(0xe74c3c)
-    .setTitle(`${EMOJI.swords} Golf Duel!`)
+    .setTitle(`${EMOJI.swords} Golf Duel — Hole ${level}!`)
     .setDescription(
       `**${interaction.user.displayName}** has challenged **${opponent.displayName}** to a duel!\n\n` +
-        `**Level ${level}** — Play the level and submit your score with:\n` +
-        `\`/submit level:${level} strokes:<your score>\`\n\n` +
+        `**Hole ${level}** — Play it and submit your score with:\n` +
+        `\`/submit strokes:<your score>\`\n\n` +
         `Both players must submit to see the result!`
     )
     .setFooter({ text: "May the fewest strokes win" });
@@ -441,6 +539,9 @@ client.on("interactionCreate", async (interaction) => {
     switch (interaction.commandName) {
       case "golf":
         await handleGolf(interaction);
+        break;
+      case "today":
+        await handleToday(interaction);
         break;
       case "submit":
         await handleSubmit(interaction);

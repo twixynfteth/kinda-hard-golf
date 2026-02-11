@@ -93,10 +93,19 @@ const rest = new REST().setToken(process.env.DISCORD_TOKEN);
 (async () => {
   try {
     console.log(`Registering ${commands.length} slash commands...`);
-    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), {
-      body: commands,
-    });
-    console.log("Commands registered successfully!");
+    const guildId = process.env.GUILD_ID;
+    if (guildId) {
+      await rest.put(
+        Routes.applicationGuildCommands(process.env.CLIENT_ID, guildId),
+        { body: commands }
+      );
+      console.log(`Commands registered to guild ${guildId} (instant update)!`);
+    } else {
+      await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), {
+        body: commands,
+      });
+      console.log("Commands registered globally (may take up to 1 hour).");
+    }
   } catch (error) {
     console.error("Error registering commands:", error);
   }

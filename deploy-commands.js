@@ -95,6 +95,12 @@ const rest = new REST().setToken(process.env.DISCORD_TOKEN);
     console.log(`Registering ${commands.length} slash commands...`);
     const guildId = process.env.GUILD_ID;
     if (guildId) {
+      // Clear old global commands
+      await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), {
+        body: [],
+      });
+      console.log("Cleared old global commands.");
+
       await rest.put(
         Routes.applicationGuildCommands(process.env.CLIENT_ID, guildId),
         { body: commands }

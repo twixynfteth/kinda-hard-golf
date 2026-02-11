@@ -13,20 +13,24 @@ const commands = [
     ),
 
   new SlashCommandBuilder()
+    .setName("today")
+    .setDescription("See today's daily hole number and server scores"),
+
+  new SlashCommandBuilder()
     .setName("submit")
-    .setDescription("Submit your score for a level")
-    .addIntegerOption((opt) =>
-      opt
-        .setName("level")
-        .setDescription("Level number (e.g. 1, 2, 3...)")
-        .setRequired(true)
-        .setMinValue(1)
-    )
+    .setDescription("Submit your score (defaults to today's hole)")
     .addIntegerOption((opt) =>
       opt
         .setName("strokes")
         .setDescription("Number of strokes it took you")
         .setRequired(true)
+        .setMinValue(1)
+    )
+    .addIntegerOption((opt) =>
+      opt
+        .setName("level")
+        .setDescription("Hole number (leave blank for today's daily hole)")
+        .setRequired(false)
         .setMinValue(1)
     ),
 
@@ -54,7 +58,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("golfduel")
-    .setDescription("Challenge someone to a golf duel on a specific level!")
+    .setDescription("Challenge someone to a golf duel (defaults to today's hole)")
     .addUserOption((opt) =>
       opt
         .setName("opponent")
@@ -64,8 +68,8 @@ const commands = [
     .addIntegerOption((opt) =>
       opt
         .setName("level")
-        .setDescription("Level number to compete on")
-        .setRequired(true)
+        .setDescription("Hole number (leave blank for today's daily hole)")
+        .setRequired(false)
         .setMinValue(1)
     ),
 
